@@ -180,6 +180,12 @@ class ClientSession(
                 )
             ),
             types.InitializeResult,
+            # TODO should set a request_read_timeout_seconds as per
+            # guidance from BaseSession.send_request not obvious
+            # what subsequent process should be, refer the following
+            # specification for more details
+            # https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/cancellation
+            cancellable=False,
         )
 
         if result.protocolVersion not in SUPPORTED_PROTOCOL_VERSIONS:
@@ -328,6 +334,7 @@ class ClientSession(
         read_timeout_seconds: timedelta | None = None,
         progress_callback: ProgressFnT | ResourceProgressFnT | None = None,
         validate_result: bool = True,
+        cancellable: bool = True,
     ) -> types.CallToolResult:
         """Send a tools/call request with optional progress callback support."""
 
@@ -344,6 +351,7 @@ class ClientSession(
             types.CallToolResult,
             request_read_timeout_seconds=read_timeout_seconds,
             progress_callback=progress_callback,
+            cancellable=cancellable,
         )
 
         if validate_result:
