@@ -80,6 +80,10 @@ from pydantic import AnyUrl, BaseModel
 from typing_extensions import TypeVar
 
 import mcp.types as types
+from mcp.server.lowlevel.async_request_manager import (
+    AsyncRequestManager,
+    SimpleInMemoryAsyncRequestManager,
+)
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
@@ -135,6 +139,9 @@ class Server(Generic[LifespanResultT, RequestT]):
             [Server[LifespanResultT, RequestT]],
             AbstractAsyncContextManager[LifespanResultT],
         ] = lifespan,
+        async_request_manager: AsyncRequestManager = SimpleInMemoryAsyncRequestManager(
+            max_size=1000, max_keep_alive=60
+        ),
     ):
         self.name = name
         self.version = version
@@ -145,9 +152,10 @@ class Server(Generic[LifespanResultT, RequestT]):
         ] = {
             types.PingRequest: _ping_handler,
         }
+        self.async_request_manager = async_request_manager
         self.notification_handlers: dict[type, Callable[..., Awaitable[None]]] = {}
         self.notification_options = NotificationOptions()
-        logger.debug(f"Initializing server '{name}'")
+        logger.debug("Initializing server %r", name)
 
     def create_initialization_options(
         self,
@@ -517,7 +525,32 @@ must return structured content"""
                     except Exception as e:
                         return handle_error(e)
 
+            async def async_call_handler(req: types.CallToolAsyncRequest):
+                ctx = request_ctx.get()
+                result = await self.async_request_manager.start_call(handler, req, ctx)
+                return types.ServerResult(result)
+
+            async def async_join_handler(req: types.JoinCallToolAsyncRequest):
+                ctx = request_ctx.get()
+                result = await self.async_request_manager.join_call(req, ctx)
+                return types.ServerResult(result)
+
+            async def async_cancel_handler(req: types.CancelToolAsyncNotification):
+                await self.async_request_manager.cancel(req)
+
+            async def async_result_handler(req: types.GetToolAsyncResultRequest):
+                result = await self.async_request_manager.get_result(req)
+                return types.ServerResult(result)
+
             self.request_handlers[types.CallToolRequest] = handler
+            self.request_handlers[types.CallToolAsyncRequest] = async_call_handler
+            self.request_handlers[types.JoinCallToolAsyncRequest] = async_join_handler
+            self.request_handlers[types.GetToolAsyncResultRequest] = (
+                async_result_handler
+            )
+            self.notification_handlers[types.CancelToolAsyncNotification] = (
+                async_cancel_handler
+            )
             return func
 
         return decorator
@@ -596,12 +629,15 @@ must return structured content"""
                     write_stream,
                     initialization_options,
                     stateless=stateless,
+                    notification_hook=self.async_request_manager.notification_hook,
+                    session_close_hook=self.async_request_manager.session_close_hook,
                 )
             )
+            await stack.enter_async_context(self.async_request_manager)
 
             async with anyio.create_task_group() as tg:
                 async for message in session.incoming_messages:
-                    logger.debug(f"Received message: {message}")
+                    logger.debug("Received message: %s", message)
 
                     tg.start_soon(
                         self._handle_message,
@@ -634,7 +670,9 @@ must return structured content"""
                     await self._handle_notification(notify)
 
             for warning in w:
-                logger.info(f"Warning: {warning.category.__name__}: {warning.message}")
+                logger.info(
+                    "Warning: %s: %s", warning.category.__name__, warning.message
+                )
 
     async def _handle_request(
         self,
@@ -644,10 +682,9 @@ must return structured content"""
         lifespan_context: LifespanResultT,
         raise_exceptions: bool,
     ):
-        logger.info(f"Processing request of type {type(req).__name__}")
-        if type(req) in self.request_handlers:
-            handler = self.request_handlers[type(req)]
-            logger.debug(f"Dispatching request of type {type(req).__name__}")
+        logger.info("Processing request of type %s", type(req).__name__)
+        if handler := self.request_handlers.get(type(req)):  # type: ignore
+            logger.debug("Dispatching request of type %s", type(req).__name__)
 
             token = None
             try:
@@ -693,16 +730,13 @@ must return structured content"""
         logger.debug("Response sent")
 
     async def _handle_notification(self, notify: Any):
-        if type(notify) in self.notification_handlers:
-            assert type(notify) in self.notification_handlers
-
-            handler = self.notification_handlers[type(notify)]
-            logger.debug(f"Dispatching notification of type {type(notify).__name__}")
+        if handler := self.notification_handlers.get(type(notify)):  # type: ignore
+            logger.debug("Dispatching notification of type %s", type(notify).__name__)
 
             try:
                 await handler(notify)
-            except Exception as err:
-                logger.error(f"Uncaught exception in notification handler: {err}")
+            except Exception:
+                logger.exception("Uncaught exception in notification handler")
 
 
 async def _ping_handler(request: types.PingRequest) -> types.ServerResult:
