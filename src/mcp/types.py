@@ -373,6 +373,13 @@ class ProgressNotificationParams(NotificationParams):
     Message related to progress. This should provide relevant human readable
     progress information.
     """
+    resource_uri: Annotated[AnyUrl, UrlConstraints(host_required=False)] | None = None
+    """
+    An optional reference to an ephemeral resource associated with this 
+    progress, servers may delete these at their descretion, but are encouraged 
+    to make them available for a reasonable time period to allow clients to 
+    retrieve and cache the resources locally
+    """
     model_config = ConfigDict(extra="allow")
 
 
