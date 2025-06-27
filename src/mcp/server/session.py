@@ -302,8 +302,7 @@ class ServerSession(
         total: float | None = None,
         message: str | None = None,
         related_request_id: str | None = None,
-        resource_uri: Annotated[AnyUrl, UrlConstraints(host_required=False)]
-        | None = None,
+        resource_uri: Annotated[AnyUrl, UrlConstraints(host_required=False)] | None = None,
     ) -> None:
         """Send a progress notification."""
         await self.send_notification(

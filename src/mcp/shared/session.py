@@ -63,8 +63,7 @@ class ResourceProgressFnT(Protocol):
         progress: float,
         total: float | None,
         message: str | None,
-        resource_uri: Annotated[AnyUrl, UrlConstraints(host_required=False)]
-        | None = None,
+        resource_uri: Annotated[AnyUrl, UrlConstraints(host_required=False)] | None = None,
     ) -> None: ...
 
 
@@ -316,18 +315,12 @@ class BaseSession(
                         if scope.cancel_called:
                             notification = CancelledNotification(
                                 method="notifications/cancelled",
-                                params=CancelledNotificationParams(
-                                    requestId=request_id, reason="cancelled"
-                                ),
+                                params=CancelledNotificationParams(requestId=request_id, reason="cancelled"),
                             )
                             await self._send_notification(  # type: ignore
                                 notification, request_id
                             )
-                            raise McpError(
-                                ErrorData(
-                                    code=REQUEST_CANCELLED, message="Request cancelled"
-                                )
-                            )
+                            raise McpError(ErrorData(code=REQUEST_CANCELLED, message="Request cancelled"))
 
                 except TimeoutError:
                     raise McpError(
@@ -463,7 +456,7 @@ class BaseSession(
                                             notification.root.params.total,
                                             notification.root.params.message,
                                             notification.root.params.resource_uri,
-                                        )                                        
+                                        )
                                 await self._received_notification(notification)
                                 await self._handle_incoming(notification)
                         except Exception as e:
