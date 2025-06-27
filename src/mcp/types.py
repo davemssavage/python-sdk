@@ -23,7 +23,7 @@ for reference.
   not separate types in the schema.
 """
 
-LATEST_PROTOCOL_VERSION = "2025-03-26"
+LATEST_PROTOCOL_VERSION = "2025-06-18"
 
 """
 The default negotiated version of the Model Context Protocol when no version is specified.
@@ -156,6 +156,7 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+REQUEST_CANCELLED = -32604
 
 
 class ErrorData(BaseModel):
