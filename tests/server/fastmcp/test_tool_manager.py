@@ -323,7 +323,7 @@ class TestCallTools:
         class TestAuthorizer(Authorizer):
             allow: bool = True
 
-            def permit_list_tool(self, name):
+            def permit_list_tool(self, name, context=None):
                 return self.allow
 
             def permit_call_tool(self, name, arguments, context=None):
