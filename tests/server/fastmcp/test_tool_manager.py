@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
+import anyio
 import pytest
 from pydantic import BaseModel
 
@@ -13,7 +14,7 @@ from mcp.server.fastmcp.tools import Tool, ToolManager
 from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase, FuncMetadata
 from mcp.server.session import ServerSessionT
 from mcp.shared.context import LifespanContextT, RequestT
-from mcp.types import TextContent, ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations, Tool as ToolDef
 
 
 class TestAddTools:
@@ -337,6 +338,37 @@ class TestCallTools:
         authorizer.allow = False
         with pytest.raises(ToolError, match="Unknown tool: double"):
             await manager.call_tool("double", {"n": 5})
+
+    async def test_call_custom_tool_(self):
+        sum_1_called = anyio.Event()
+        sum_2_called = anyio.Event()
+        def sum_1_vals(vals: list[int]) -> int:
+            sum_1_called.set()
+            return sum(vals)
+
+        def sum_2_vals(vals: list[int]) -> int:
+            sum_2_called.set()
+            return sum(vals)
+        manager1 = ToolManager()
+        tool1 = manager1.add_tool(sum_1_vals)
+
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool1.name,
+            title=tool1.title,
+            description=tool1.description,
+            inputSchema=tool1.parameters,
+            outputSchema=tool1.output_schema,
+            annotations=tool1.annotations
+        )
+        tool2 = Tool.from_definition(sum_2_vals, tool_def)
+        manager2.add_custom_tool(tool2)
+        result = await manager2.call_tool("sum_1_vals", {"vals": [1, 2, 3]})
+        assert result == 6
+        assert sum_2_called.is_set()
+        result = await manager1.call_tool("sum_1_vals", {"vals": [1, 2, 3]})
+        assert result == 6
+        assert sum_1_called.is_set()
 
 
 class TestToolSchema:
