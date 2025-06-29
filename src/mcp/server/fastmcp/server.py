@@ -314,6 +314,9 @@ class FastMCP:
             logger.error(f"Error reading resource {uri}: {e}")
             raise ResourceError(str(e))
 
+    def add_custom_tool(self, tool: Tool):
+        self._tool_manager.add_custom_tool(tool)
+
     def add_tool(
         self,
         fn: AnyFunction,

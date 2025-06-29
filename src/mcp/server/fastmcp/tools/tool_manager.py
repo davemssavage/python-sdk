@@ -60,6 +60,9 @@ class ToolManager:
             annotations=annotations,
             structured_output=structured_output,
         )
+        return self.add_custom_tool(tool)
+
+    def add_custom_tool(self, tool: Tool) -> Tool:
         existing = self._tools.get(tool.name)
         if existing:
             if self.warn_on_duplicate_tools:
