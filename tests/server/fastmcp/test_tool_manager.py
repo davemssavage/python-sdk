@@ -339,7 +339,8 @@ class TestCallTools:
         with pytest.raises(ToolError, match="Unknown tool: double"):
             await manager.call_tool("double", {"n": 5})
 
-    async def test_call_custom_tool_(self):
+    @pytest.mark.anyio
+    async def test_call_custom_tool(self):
         sum_1_called = anyio.Event()
         sum_2_called = anyio.Event()
         def sum_1_vals(vals: list[int]) -> int:
@@ -370,6 +371,40 @@ class TestCallTools:
         assert result == 6
         assert sum_1_called.is_set()
 
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool_complex_input(self):
+        func_called = anyio.Event()
+        proxy_called = anyio.Event()
+
+        class UserInput(BaseModel):
+            name: str
+            age: int
+
+        def create_user(user: UserInput, flag: bool) -> dict:
+            """Create a new user."""
+            return {"id": 1, **user.model_dump()}
+
+        def proxy(params: dict[str, Any]) -> dict:
+            """Create a new user."""
+            return create_user(params['user'], params['flag'])
+        
+        manager1 = ToolManager()
+        tool = manager1.add_tool(create_user)
+
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            inputSchema=tool.parameters,
+            outputSchema=tool.output_schema,
+            annotations=tool.annotations
+        )
+        tool2 = Tool.from_definition(proxy, tool_def)
+        manager2.add_custom_tool(tool2)
+        result = await manager2.call_tool("create_user", {"user": UserInput(name="bob", age=24), "flag": True})
+        assert result == {'id': 1, 'name': 'bob', 'age': 24}
 
 class TestToolSchema:
     @pytest.mark.anyio

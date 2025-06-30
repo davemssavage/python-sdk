@@ -126,6 +126,7 @@ class Tool(BaseModel):
         try:
             result = await self.fn_metadata.call_fn_with_arg_validation(
                 self.fn,
+                self.parameters,
                 self.is_async,
                 arguments,
                 {self.context_kwarg: context} if self.context_kwarg is not None else None,
