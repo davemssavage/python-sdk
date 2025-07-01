@@ -381,6 +381,47 @@ class TestCallTools:
         result = await manager2.call_tool("create_user", {"user": UserInput(name="bob", age=24), "flag": True})
         assert result == {'id': 1, 'name': 'bob', 'age': 24}
 
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool_complex_output(self):
+        func_called = anyio.Event()
+        proxy_called = anyio.Event()
+
+        class UserInput(BaseModel):
+            name: str
+            age: int
+
+        class UserOutput(BaseModel):
+            id: int
+            name: str
+            age: int
+
+        def create_user(user: UserInput, flag: bool) -> UserOutput:
+            """Create a new user."""
+            return UserOutput(id=1, name=user.name, age=user.age)
+
+        def proxy(params: dict[str, Any]) -> dict[str, Any]:
+            """Create a new user."""
+            return create_user(params['user'], params['flag']).model_dump()
+        
+        manager1 = ToolManager()
+        tool = manager1.add_tool(create_user)
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            inputSchema=tool.parameters,
+            outputSchema=tool.output_schema,
+            annotations=tool.annotations
+        )
+        tool2 = Tool.from_definition(proxy, tool_def)
+        
+        manager2.add_custom_tool(tool2)
+        [_, result] = await manager2.call_tool("create_user", {"user": UserInput(name="bob", age=24), "flag": True}, convert_result=True)
+        assert result == {'id': 1, 'name': 'bob', 'age': 24}
+
+
 class TestToolSchema:
     @pytest.mark.anyio
     async def test_context_arg_excluded_from_schema(self):
