@@ -14,7 +14,8 @@ from mcp.server.fastmcp.tools import Tool, ToolManager
 from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase, FuncMetadata
 from mcp.server.session import ServerSessionT
 from mcp.shared.context import LifespanContextT, RequestT
-from mcp.types import TextContent, ToolAnnotations, Tool as ToolDef
+from mcp.types import TextContent, ToolAnnotations
+from mcp.types import Tool as ToolDef
 
 
 class TestAddTools:
@@ -343,6 +344,7 @@ class TestCallTools:
     async def test_call_custom_tool(self):
         sum_1_called = anyio.Event()
         sum_2_called = anyio.Event()
+
         def sum_1_vals(vals: list[int]) -> int:
             sum_1_called.set()
             return sum(vals)
@@ -350,6 +352,7 @@ class TestCallTools:
         def sum_2_vals(vals: list[int]) -> int:
             sum_2_called.set()
             return sum(vals)
+
         manager1 = ToolManager()
         tool1 = manager1.add_tool(sum_1_vals)
 
@@ -360,7 +363,7 @@ class TestCallTools:
             description=tool1.description,
             inputSchema=tool1.parameters,
             outputSchema=tool1.output_schema,
-            annotations=tool1.annotations
+            annotations=tool1.annotations,
         )
         tool2 = Tool.from_definition(sum_2_vals, tool_def)
         manager2.add_custom_tool(tool2)
@@ -371,12 +374,8 @@ class TestCallTools:
         assert result == 6
         assert sum_1_called.is_set()
 
-
     @pytest.mark.anyio
     async def test_call_custom_tool_complex_input(self):
-        func_called = anyio.Event()
-        proxy_called = anyio.Event()
-
         class UserInput(BaseModel):
             name: str
             age: int
@@ -387,8 +386,8 @@ class TestCallTools:
 
         def proxy(params: dict[str, Any]) -> dict:
             """Create a new user."""
-            return create_user(params['user'], params['flag'])
-        
+            return create_user(params["user"], params["flag"])
+
         manager1 = ToolManager()
         tool = manager1.add_tool(create_user)
 
@@ -399,19 +398,53 @@ class TestCallTools:
             description=tool.description,
             inputSchema=tool.parameters,
             outputSchema=tool.output_schema,
-            annotations=tool.annotations
+            annotations=tool.annotations,
         )
         tool2 = Tool.from_definition(proxy, tool_def)
         manager2.add_custom_tool(tool2)
         result = await manager2.call_tool("create_user", {"user": UserInput(name="bob", age=24), "flag": True})
-        assert result == {'id': 1, 'name': 'bob', 'age': 24}
+        assert result == {"id": 1, "name": "bob", "age": 24}
 
+    @pytest.mark.anyio
+    async def test_call_custom_tool_complex_input_and_context(self):
+        from mcp.server.fastmcp.server import Context
+
+        class UserInput(BaseModel):
+            name: str
+            age: int
+
+        def create_user(user: UserInput, flag: bool) -> dict[str, Any]:
+            """Create a new user."""
+            return {"id": 1, **user.model_dump()}
+
+        async def proxy(params: dict[str, Any], context: Context) -> dict[str, Any]:
+            """Create a new user."""
+            return create_user(params["user"], params["flag"])
+
+        manager1 = ToolManager()
+        tool = manager1.add_tool(create_user)
+
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            inputSchema=tool.parameters,
+            outputSchema=tool.output_schema,
+            annotations=tool.annotations,
+        )
+        tool2 = Tool.from_definition(proxy, tool_def)
+        manager2.add_custom_tool(tool2)
+        mcp = FastMCP()
+        ctx = mcp.get_context()
+
+        result = await manager2.call_tool(
+            "create_user", {"user": UserInput(name="bob", age=24), "flag": True}, context=ctx
+        )
+        assert result == {"id": 1, "name": "bob", "age": 24}
 
     @pytest.mark.anyio
     async def test_call_custom_tool_complex_output(self):
-        func_called = anyio.Event()
-        proxy_called = anyio.Event()
-
         class UserInput(BaseModel):
             name: str
             age: int
@@ -427,8 +460,8 @@ class TestCallTools:
 
         def proxy(params: dict[str, Any]) -> dict[str, Any]:
             """Create a new user."""
-            return create_user(params['user'], params['flag']).model_dump()
-        
+            return create_user(params["user"], params["flag"]).model_dump()
+
         manager1 = ToolManager()
         tool = manager1.add_tool(create_user)
         manager2 = ToolManager()
@@ -438,13 +471,15 @@ class TestCallTools:
             description=tool.description,
             inputSchema=tool.parameters,
             outputSchema=tool.output_schema,
-            annotations=tool.annotations
+            annotations=tool.annotations,
         )
         tool2 = Tool.from_definition(proxy, tool_def)
-        
+
         manager2.add_custom_tool(tool2)
-        [_, result] = await manager2.call_tool("create_user", {"user": UserInput(name="bob", age=24), "flag": True}, convert_result=True)
-        assert result == {'id': 1, 'name': 'bob', 'age': 24}
+        [_, result] = await manager2.call_tool(
+            "create_user", {"user": UserInput(name="bob", age=24), "flag": True}, convert_result=True
+        )
+        assert result == {"id": 1, "name": "bob", "age": 24}
 
 
 class TestToolSchema:

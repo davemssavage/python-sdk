@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
-from mcp.types import ToolAnnotations, Tool as ToolDef
+from mcp.types import Tool as ToolDef
+from mcp.types import ToolAnnotations
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp.server import Context
@@ -37,21 +38,33 @@ class Tool(BaseModel):
     @cached_property
     def output_schema(self) -> dict[str, Any] | None:
         return self.output or self.fn_metadata.output_schema
-    
+
     @classmethod
     def from_definition(
-        cls, 
+        cls,
         fn: Callable[..., Any],
         tool_definition: ToolDef,
         context_kwarg: str | None = None,
         structured_output: bool | None = None,
-        ) -> Tool:
+    ) -> Tool:
+        from mcp.server.fastmcp.server import Context
+
+        is_async = _is_async_callable(fn)
+        if context_kwarg is None:
+            sig = inspect.signature(fn)
+            for param_name, param in sig.parameters.items():
+                if get_origin(param.annotation) is not None:
+                    continue
+                if issubclass(param.annotation, Context):
+                    context_kwarg = param_name
+                    break
+
         func_arg_metadata = func_metadata(
             fn,
             skip_names=[context_kwarg] if context_kwarg is not None else [],
             structured_output=structured_output,
         )
-        is_async = _is_async_callable(fn)
+
         return cls(
             fn=fn,
             name=tool_definition.name,
@@ -64,7 +77,6 @@ class Tool(BaseModel):
             context_kwarg=context_kwarg,
             annotations=tool_definition.annotations,
         )
-
 
     @classmethod
     def from_function(
