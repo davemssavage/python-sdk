@@ -76,9 +76,9 @@ class FuncMetadata(BaseModel):
         the argument model, before being passed to the function.
         """
         schema = self.arg_model.model_json_schema()
-        del schema['title']
+        del schema["title"]
         compare = parameters.copy()
-        del compare['title']
+        del compare["title"]
         if schema == compare:
             arguments_pre_parsed = self.pre_parse_json(arguments_to_validate)
             arguments_parsed_model = self.arg_model.model_validate(arguments_pre_parsed)
@@ -86,11 +86,12 @@ class FuncMetadata(BaseModel):
 
             arguments_parsed_dict |= arguments_to_pass_directly or {}
         else:
-            properties: dict[str, dict[str, Any]] = schema.get('properties', {})
+            properties: dict[str, dict[str, Any]] = schema.get("properties", {})
             if len(properties) == 1:
                 [key, value] = next(iter(properties.items()))
-                if value.get('type') == 'object':
+                if value.get("type") == "object":
                     arguments_parsed_dict = {key: arguments_to_validate}
+                    arguments_parsed_dict |= arguments_to_pass_directly or {}
                 else:
                     arguments_parsed_dict = {}
             else:
