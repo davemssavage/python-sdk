@@ -10,6 +10,7 @@ from starlette.routing import Mount, Route
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.prompts.base import Message, UserMessage
 from mcp.server.fastmcp.resources import FileResource, FunctionResource
+from mcp.server.fastmcp.server import Tool
 from mcp.server.fastmcp.utilities.types import Image
 from mcp.shared.exceptions import McpError
 from mcp.shared.memory import (
@@ -531,6 +532,35 @@ class TestServerTools:
             result = await client.call_tool("get_settings", {})
             assert result.isError is False
             assert result.structuredContent == {"theme": "dark", "language": "en", "timezone": "UTC"}
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool_as_proxy(self):
+        mcp = FastMCP()
+        def add(x: int, y: int) -> int:
+            return x + y
+
+
+        mcp.add_tool(add, structured_output=True)
+        tools = await mcp.list_tools()
+
+        proxy = FastMCP()
+        async def proxy_fn(input: dict[str, Any], context: Context) -> Any:
+            async with client_session(mcp._mcp_server) as client:
+                result = await client.call_tool("add", input)
+                assert result.structuredContent is not None
+                return result.structuredContent['result']
+        
+        proxy_tool = Tool.from_definition(
+            proxy_fn,
+            tools[0]
+        )
+        proxy.add_custom_tool(proxy_tool)
+
+        async with client_session(proxy._mcp_server) as client:
+            result = await client.call_tool("add", {"x": 1, "y": 4})
+            assert result.structuredContent is not None
+            assert result.structuredContent['result'] == 5
+
 
 
 class TestServerResources:
