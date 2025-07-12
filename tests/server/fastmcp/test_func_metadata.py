@@ -91,6 +91,7 @@ async def test_complex_function_runtime_arg_validation_non_json():
     # Test with minimum required arguments
     result = await meta.call_fn_with_arg_validation(
         complex_arguments_fn,
+        parameters=meta.arg_model.model_json_schema(),
         fn_is_async=False,
         arguments_to_validate={
             "an_int": 1,
@@ -114,6 +115,7 @@ async def test_complex_function_runtime_arg_validation_non_json():
     with pytest.raises(ValueError):
         await meta.call_fn_with_arg_validation(
             complex_arguments_fn,
+            parameters=meta.arg_model.model_json_schema(),
             fn_is_async=False,
             arguments_to_validate={"an_int": "not an int"},
             arguments_to_pass_directly=None,
@@ -127,6 +129,7 @@ async def test_complex_function_runtime_arg_validation_with_json():
 
     result = await meta.call_fn_with_arg_validation(
         complex_arguments_fn,
+        parameters=meta.arg_model.model_json_schema(),
         fn_is_async=False,
         arguments_to_validate={
             "an_int": 1,
@@ -257,6 +260,7 @@ async def test_lambda_function():
     async def check_call(args):
         return await meta.call_fn_with_arg_validation(
             fn,
+            parameters=meta.arg_model.model_json_schema(),
             fn_is_async=False,
             arguments_to_validate=args,
             arguments_to_pass_directly=None,

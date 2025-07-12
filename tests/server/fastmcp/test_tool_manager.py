@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
+import anyio
 import pytest
 from pydantic import BaseModel
 
@@ -13,6 +14,7 @@ from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase, FuncMetadat
 from mcp.server.session import ServerSessionT
 from mcp.shared.context import LifespanContextT, RequestT
 from mcp.types import TextContent, ToolAnnotations
+from mcp.types import Tool as ToolDef
 
 
 class TestAddTools:
@@ -312,6 +314,147 @@ class TestCallTools:
             {"tank": '{"x": null, "shrimp": [{"name": "rex"}, {"name": "gertrude"}]}'},
         )
         assert result == ["rex", "gertrude"]
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool(self):
+        sum_1_called = anyio.Event()
+        sum_2_called = anyio.Event()
+
+        def sum_1_vals(vals: list[int]) -> int:
+            sum_1_called.set()
+            return sum(vals)
+
+        def sum_2_vals(vals: list[int]) -> int:
+            sum_2_called.set()
+            return sum(vals)
+
+        manager1 = ToolManager()
+        tool1 = manager1.add_tool(sum_1_vals)
+
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool1.name,
+            title=tool1.title,
+            description=tool1.description,
+            inputSchema=tool1.parameters,
+            outputSchema=tool1.output_schema,
+            annotations=tool1.annotations,
+        )
+        tool2 = Tool.from_definition(sum_2_vals, tool_def)
+        manager2.add_custom_tool(tool2)
+        result = await manager2.call_tool("sum_1_vals", {"vals": [1, 2, 3]})
+        assert result == 6
+        assert sum_2_called.is_set()
+        result = await manager1.call_tool("sum_1_vals", {"vals": [1, 2, 3]})
+        assert result == 6
+        assert sum_1_called.is_set()
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool_complex_input(self):
+        class UserInput(BaseModel):
+            name: str
+            age: int
+
+        def create_user(user: UserInput, flag: bool) -> dict:
+            """Create a new user."""
+            return {"id": 1, **user.model_dump()}
+
+        def proxy(params: dict[str, Any]) -> dict:
+            """Create a new user."""
+            return create_user(params["user"], params["flag"])
+
+        manager1 = ToolManager()
+        tool = manager1.add_tool(create_user)
+
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            inputSchema=tool.parameters,
+            outputSchema=tool.output_schema,
+            annotations=tool.annotations,
+        )
+        tool2 = Tool.from_definition(proxy, tool_def)
+        manager2.add_custom_tool(tool2)
+        result = await manager2.call_tool("create_user", {"user": UserInput(name="bob", age=24), "flag": True})
+        assert result == {"id": 1, "name": "bob", "age": 24}
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool_complex_input_and_context(self):
+        from mcp.server.fastmcp.server import Context
+
+        class UserInput(BaseModel):
+            name: str
+            age: int
+
+        def create_user(user: UserInput, flag: bool) -> dict[str, Any]:
+            """Create a new user."""
+            return {"id": 1, **user.model_dump()}
+
+        async def proxy(params: dict[str, Any], context: Context) -> dict[str, Any]:
+            """Create a new user."""
+            return create_user(params["user"], params["flag"])
+
+        manager1 = ToolManager()
+        tool = manager1.add_tool(create_user)
+
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            inputSchema=tool.parameters,
+            outputSchema=tool.output_schema,
+            annotations=tool.annotations,
+        )
+        tool2 = Tool.from_definition(proxy, tool_def)
+        manager2.add_custom_tool(tool2)
+        mcp = FastMCP()
+        ctx = mcp.get_context()
+
+        result = await manager2.call_tool(
+            "create_user", {"user": UserInput(name="bob", age=24), "flag": True}, context=ctx
+        )
+        assert result == {"id": 1, "name": "bob", "age": 24}
+
+    @pytest.mark.anyio
+    async def test_call_custom_tool_complex_output(self):
+        class UserInput(BaseModel):
+            name: str
+            age: int
+
+        class UserOutput(BaseModel):
+            id: int
+            name: str
+            age: int
+
+        def create_user(user: UserInput, flag: bool) -> UserOutput:
+            """Create a new user."""
+            return UserOutput(id=1, name=user.name, age=user.age)
+
+        def proxy(params: dict[str, Any]) -> dict[str, Any]:
+            """Create a new user."""
+            return create_user(params["user"], params["flag"]).model_dump()
+
+        manager1 = ToolManager()
+        tool = manager1.add_tool(create_user)
+        manager2 = ToolManager()
+        tool_def = ToolDef(
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            inputSchema=tool.parameters,
+            outputSchema=tool.output_schema,
+            annotations=tool.annotations,
+        )
+        tool2 = Tool.from_definition(proxy, tool_def)
+
+        manager2.add_custom_tool(tool2)
+        [_, result] = await manager2.call_tool(
+            "create_user", {"user": UserInput(name="bob", age=24), "flag": True}, convert_result=True
+        )
+        assert result == {"id": 1, "name": "bob", "age": 24}
 
 
 class TestToolSchema:

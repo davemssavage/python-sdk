@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
+from mcp.types import Tool as ToolDef
 from mcp.types import ToolAnnotations
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ class Tool(BaseModel):
     title: str | None = Field(None, description="Human-readable title of the tool")
     description: str = Field(description="Description of what the tool does")
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
+    output: dict[str, Any] | None = Field(description="JSON schema for tool output", default=None)
     fn_metadata: FuncMetadata = Field(
         description="Metadata about the function including a pydantic model for tool arguments"
     )
@@ -35,7 +37,46 @@ class Tool(BaseModel):
 
     @cached_property
     def output_schema(self) -> dict[str, Any] | None:
-        return self.fn_metadata.output_schema
+        return self.output or self.fn_metadata.output_schema
+
+    @classmethod
+    def from_definition(
+        cls,
+        fn: Callable[..., Any],
+        tool_definition: ToolDef,
+        context_kwarg: str | None = None,
+        structured_output: bool | None = None,
+    ) -> Tool:
+        from mcp.server.fastmcp.server import Context
+
+        is_async = _is_async_callable(fn)
+        if context_kwarg is None:
+            sig = inspect.signature(fn)
+            for param_name, param in sig.parameters.items():
+                if get_origin(param.annotation) is not None:
+                    continue
+                if issubclass(param.annotation, Context):
+                    context_kwarg = param_name
+                    break
+
+        func_arg_metadata = func_metadata(
+            fn,
+            skip_names=[context_kwarg] if context_kwarg is not None else [],
+            structured_output=structured_output,
+        )
+
+        return cls(
+            fn=fn,
+            name=tool_definition.name,
+            title=tool_definition.title,
+            description=tool_definition.description or "",
+            parameters=tool_definition.inputSchema,
+            output=tool_definition.outputSchema,
+            fn_metadata=func_arg_metadata,
+            is_async=is_async,
+            context_kwarg=context_kwarg,
+            annotations=tool_definition.annotations,
+        )
 
     @classmethod
     def from_function(
@@ -97,6 +138,7 @@ class Tool(BaseModel):
         try:
             result = await self.fn_metadata.call_fn_with_arg_validation(
                 self.fn,
+                self.parameters,
                 self.is_async,
                 arguments,
                 {self.context_kwarg: context} if self.context_kwarg is not None else None,

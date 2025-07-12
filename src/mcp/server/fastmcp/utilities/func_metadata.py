@@ -65,6 +65,7 @@ class FuncMetadata(BaseModel):
     async def call_fn_with_arg_validation(
         self,
         fn: Callable[..., Any | Awaitable[Any]],
+        parameters: dict[str, Any],
         fn_is_async: bool,
         arguments_to_validate: dict[str, Any],
         arguments_to_pass_directly: dict[str, Any] | None,
@@ -74,11 +75,27 @@ class FuncMetadata(BaseModel):
         Arguments are first attempted to be parsed from JSON, then validated against
         the argument model, before being passed to the function.
         """
-        arguments_pre_parsed = self.pre_parse_json(arguments_to_validate)
-        arguments_parsed_model = self.arg_model.model_validate(arguments_pre_parsed)
-        arguments_parsed_dict = arguments_parsed_model.model_dump_one_level()
+        schema = self.arg_model.model_json_schema()
+        del schema["title"]
+        compare = parameters.copy()
+        del compare["title"]
+        if schema == compare:
+            arguments_pre_parsed = self.pre_parse_json(arguments_to_validate)
+            arguments_parsed_model = self.arg_model.model_validate(arguments_pre_parsed)
+            arguments_parsed_dict = arguments_parsed_model.model_dump_one_level()
 
-        arguments_parsed_dict |= arguments_to_pass_directly or {}
+            arguments_parsed_dict |= arguments_to_pass_directly or {}
+        else:
+            properties: dict[str, dict[str, Any]] = schema.get("properties", {})
+            if len(properties) == 1:
+                [key, value] = next(iter(properties.items()))
+                if value.get("type") == "object":
+                    arguments_parsed_dict = {key: arguments_to_validate}
+                    arguments_parsed_dict |= arguments_to_pass_directly or {}
+                else:
+                    arguments_parsed_dict = {}
+            else:
+                arguments_parsed_dict = {}
 
         if fn_is_async:
             return await fn(**arguments_parsed_dict)
