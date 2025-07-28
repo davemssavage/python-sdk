@@ -1316,6 +1316,7 @@ async def test_streamablehttp_client_resumption_non_blocking(event_server):
                 assert captured_request_id is not None
 
                 result = await session.join_call_tool(captured_request_id)
+                assert result is not None
 
                 # We should get a complete result
                 assert len(result.content) == 1
@@ -1343,7 +1344,7 @@ async def test_streamablehttp_client_resumption_non_blocking(event_server):
 
 @pytest.mark.anyio
 async def test_streamablehttp_client_resumption_timeout(event_server):
-    """Test client session to resume a long running tool via non blocking api."""
+    """Test client session to resume a long running tool via non blocking api with timeout."""
     _, server_url = event_server
 
     with anyio.fail_after(10):
@@ -1396,13 +1397,14 @@ async def test_streamablehttp_client_resumption_timeout(event_server):
                         captured_request_id = await session.request_call_tool(
                             "long_running_with_checkpoints", arguments={}
                         )
-                        try:
-                            await session.join_call_tool(
-                                captured_request_id, request_read_timeout_seconds=timedelta(seconds=0.01)
-                            )
-                            raise RuntimeError("Expected timeout")
-                        except McpError as e:
-                            assert e.error.code == httpx.codes.REQUEST_TIMEOUT.value
+
+                        result = await session.join_call_tool(
+                            captured_request_id,
+                            request_read_timeout_seconds=timedelta(seconds=0.01),
+                            done_on_timeout=False,
+                        )
+
+                        assert result is None
 
                         timed_out.set()
 
@@ -1454,6 +1456,7 @@ async def test_streamablehttp_client_resumption_timeout(event_server):
                 assert captured_request_id is not None
 
                 result = await session.join_call_tool(captured_request_id)
+                assert result is not None
 
                 # We should get a complete result
                 assert len(result.content) == 1
@@ -1473,7 +1476,7 @@ async def test_streamablehttp_client_resumption_timeout(event_server):
                 assert not any(n in captured_notifications_pre for n in captured_notifications), (
                     f"{captured_notifications_pre} -> {captured_notifications}"
                 )
-                
+
         assert len(request_state_manager_1._progress_callbacks) == 0
         assert len(request_state_manager_1._response_streams) == 0
         assert len(request_state_manager_2._progress_callbacks) == 0
