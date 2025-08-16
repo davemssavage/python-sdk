@@ -12,6 +12,7 @@ from mcp.server.fastmcp.prompts.base import Message, UserMessage
 from mcp.server.fastmcp.resources import FileResource, FunctionResource
 from mcp.server.fastmcp.server import Tool
 from mcp.server.fastmcp.utilities.types import Image
+from mcp.server.session import ServerSession
 from mcp.shared.exceptions import McpError
 from mcp.shared.memory import (
     create_connected_server_and_client_session as client_session,
@@ -339,8 +340,10 @@ class TestServerTools:
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"test image data")
 
-        def mixed_list_fn() -> list:
-            return [
+        # TODO(Marcelo): It seems if we add the proper type hint, it generates an invalid JSON schema.
+        # We need to fix this.
+        def mixed_list_fn() -> list:  # type: ignore
+            return [  # type: ignore
                 "text message",
                 Image(image_path),
                 {"key": "value"},
@@ -348,7 +351,7 @@ class TestServerTools:
             ]
 
         mcp = FastMCP()
-        mcp.add_tool(mixed_list_fn)
+        mcp.add_tool(mixed_list_fn)  # type: ignore
         async with client_session(mcp._mcp_server) as client:
             result = await client.call_tool("mixed_list_fn", {})
             assert len(result.content) == 4
@@ -685,7 +688,7 @@ class TestServerResourceTemplates:
         mcp = FastMCP()
 
         @mcp.resource("resource://{param}")
-        def get_data(param) -> str:
+        def get_data(param) -> str:  # type: ignore
             return "Data"
 
     @pytest.mark.anyio
@@ -778,7 +781,7 @@ class TestContextInjection:
         """Test that context parameters are properly detected."""
         mcp = FastMCP()
 
-        def tool_with_context(x: int, ctx: Context) -> str:
+        def tool_with_context(x: int, ctx: Context[ServerSession, None]) -> str:
             return f"Request {ctx.request_id}: {x}"
 
         tool = mcp._tool_manager.add_tool(tool_with_context)
@@ -789,7 +792,7 @@ class TestContextInjection:
         """Test that context is properly injected into tool calls."""
         mcp = FastMCP()
 
-        def tool_with_context(x: int, ctx: Context) -> str:
+        def tool_with_context(x: int, ctx: Context[ServerSession, None]) -> str:
             assert ctx.request_id is not None
             return f"Request {ctx.request_id}: {x}"
 
@@ -807,7 +810,7 @@ class TestContextInjection:
         """Test that context works in async functions."""
         mcp = FastMCP()
 
-        async def async_tool(x: int, ctx: Context) -> str:
+        async def async_tool(x: int, ctx: Context[ServerSession, None]) -> str:
             assert ctx.request_id is not None
             return f"Async request {ctx.request_id}: {x}"
 
@@ -822,12 +825,10 @@ class TestContextInjection:
 
     @pytest.mark.anyio
     async def test_context_logging(self):
-        import mcp.server.session
-
         """Test that context logging methods work."""
         mcp = FastMCP()
 
-        async def logging_tool(msg: str, ctx: Context) -> str:
+        async def logging_tool(msg: str, ctx: Context[ServerSession, None]) -> str:
             await ctx.debug("Debug message")
             await ctx.info("Info message")
             await ctx.warning("Warning message")
@@ -896,7 +897,7 @@ class TestContextInjection:
             return "resource data"
 
         @mcp.tool()
-        async def tool_with_resource(ctx: Context) -> str:
+        async def tool_with_resource(ctx: Context[ServerSession, None]) -> str:
             r_iter = await ctx.read_resource("test://data")
             r_list = list(r_iter)
             assert len(r_list) == 1
